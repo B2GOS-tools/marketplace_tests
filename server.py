@@ -5,6 +5,7 @@ import time
 
 from gaiatest import GaiaApps
 from marionette import Marionette
+from marionette.wait import Wait
 from mozhttpd import MozHttpd
 import moznetwork
 
@@ -33,12 +34,11 @@ with open('manifest', 'r') as f:
 m = Marionette()
 m.start_session()
 gaia_apps = GaiaApps(m)
-import pdb;pdb.set_trace()
 gaia_apps.kill_all()
 
 install_script = """
-var manifestUrl = '%s%s';
-var request = window.navigator.mozApps.install(manifestUrl);
+var installUrl = '%s%s';
+var request = window.navigator.mozApps.%s(installUrl);
 request.onsuccess = function () {
   window.wrappedJSObject.marionette_install_result = true;
 };
@@ -51,7 +51,14 @@ for app_name, path in apps.iteritems():
     marketplace_app = gaia_apps.launch("Marketplace", switch_to_frame=True, launch_timeout=180000)
     # trigger the install
     print "%s%s" % (baseurl, path)
-    m.execute_script(install_script % (baseurl, path), script_timeout=30000)
+    #TODO: remove
+    baseurl = ''
+    if path.endswith(".webapp"):
+        m.execute_script(install_script % (baseurl, path, "install"), script_timeout=30000)
+    elif path.endswith(".zip"):
+        m.execute_script(install_script % (baseurl, path, "installPackage"), script_timeout=30000)
+    else:
+        raise Exception("Can't install from given path: %s" % path)
     # go to system app
     m.switch_to_frame()
     # click Install
@@ -64,12 +71,15 @@ for app_name, path in apps.iteritems():
     assert m.execute_script("return window.wrappedJSObject.marionette_install_result")
     # launch app, wait 3 minutes
     app_under_test = gaia_apps.launch(app_name, switch_to_frame=True, launch_timeout=180000)
+    # Wait at most 3 minutes for app to load
+    Wait(m, timeout=180).until(lambda m: m.execute_script("return window.document.readyState;") == "complete")
     shot = m.screenshot()
     img = base64.b64decode(shot.encode('ascii'))
     with open("%s_screenshot.png" % app_name, "w") as f:
         f.write(img)
     gaia_apps.kill_all()
     gaia_apps.uninstall(app_name)
+    import pdb;pdb.set_trace()
     # TODO: get logcats
 
 httpd.stop()
