@@ -1,5 +1,10 @@
 [
 	{
+		"app_name": "pacman-canvas",
+		"is_packaged": false,
+		"app_manifest": "http://pacman.platzh1rsch.ch/pacman-canvas.webapp"
+	},
+	{
 		"app_name": "msgme",
 		"is_packaged": false,
 		"app_manifest": "http://chat.messageme.com/manifest.webapp"

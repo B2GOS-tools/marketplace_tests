@@ -13,7 +13,7 @@ import moznetwork
 
 failed = {}
 
-def launch_with_manifest(m, app_name, manifest):
+def launch_with_manifest(m, app_name, manifest, attempt):
     m.switch_to_frame() 
     result = m.execute_async_script("GaiaApps.launchWithManifestURL('%s')" % manifest, script_timeout=180000)
     assert result, "Failed to launch app with url '%s'" % manifest
@@ -22,12 +22,13 @@ def launch_with_manifest(m, app_name, manifest):
                   name=result.get('name'),
                   origin=result.get('origin'))
     if app.frame_id is None:
-        failed[app_name] = "failed to launch; there is no app frame"
+        entry = "%s_%s" % (app_name, attempt)
+        failed[entry] = "failed to launch; there is no app frame"
     m.switch_to_frame(app.frame_id)
     return app
 
 
-def uninstall_with_manifest(m, app_name, manifest):
+def uninstall_with_manifest(m, app_name, manifest, attempt):
     m.switch_to_frame() 
     script = """
     GaiaApps.locateWithManifestURL('%s',
@@ -39,7 +40,8 @@ def uninstall_with_manifest(m, app_name, manifest):
     """
     result = m.execute_async_script(script % manifest, script_timeout=180000)
     if result != True:
-        failed[app_name] = "Failed to uninstall app with url '%s'" % manifest
+        entry = "%s_%s" % (app_name, attempt)
+        failed[entry] = "Failed to uninstall app with url '%s'" % manifest
     return app
 
 # Load manifest
@@ -76,48 +78,55 @@ with open("logcats/before_test_%s.log" % int(time.time()), "w") as f:
 for app in apps:
     # clear logcat
     app_name = app["app_name"]
-    dm._checkCmd(["logcat", "-c"])
-    # launch (or switch to) marketplace, wait 3 minutes for successful launch
-    marketplace_app = gaia_apps.launch("Marketplace", switch_to_frame=True, launch_timeout=180000)
-    # trigger the install
-    if app["is_packaged"]:
-        m.execute_script(install_script % (app["app_manifest"], "installPackage"), script_timeout=30000)
-    else:
-        m.execute_script(install_script % (app["app_manifest"], "install"), script_timeout=30000)
-    # go to system app
-    m.switch_to_frame()
-    # click Install
-    for el in m.find_elements("tag name", "button"):
-        if "Install" == el.text:
-            el.tap()
-    # get back into marketplace
-    gaia_apps.switch_to_displayed_app()
-    # Did the app get installed?
-    result = m.execute_script("return window.wrappedJSObject.marionette_install_result") 
-    if result != True: 
-        failed[app_name] = "failed to install: %s" % result
-        continue
-    # launch app, wait 3 minutes
-    #app_under_test = gaia_apps.launch(app_name, switch_to_frame=True, launch_timeout=180000)
-    app_under_test = launch_with_manifest(m, app_name, app["app_manifest"])
-    # Wait at most 3 minutes for app to load
-    try:
-        Wait(m, timeout=180).until(lambda m: m.execute_script("return window.document.readyState;") == "complete")
-    except TimeoutException:
-        failed[app_name] = "launch timeout"
-        continue
-    shot = m.screenshot()
-    img = base64.b64decode(shot.encode('ascii'))
-    if not os.path.exists("screenshots"):
-        os.makedirs("screenshots")
-    with open("screenshots/%s_%s.png" % (app_name, int(time.time())), "w") as f:
-        f.write(img)
-    gaia_apps.kill_all()
-    uninstall_with_manifest(m, app_name, app["app_manifest"])
-    logcat = dm.getLogcat()
-    with open("logcats/%s_%s.log" % (app_name, int(time.time())), "w") as f:
-        for line in logcat:
-            f.write(line)
+    installed = False
+    for attempt in [1,2]:
+        dm._checkCmd(["logcat", "-c"])
+        # launch (or switch to) marketplace, wait 3 minutes for successful launch
+        marketplace_app = gaia_apps.launch("Marketplace", switch_to_frame=True, launch_timeout=180000)
+        if not installed:
+            # trigger the install
+            if app["is_packaged"]:
+                m.execute_script(install_script % (app["app_manifest"], "installPackage"), script_timeout=30000)
+            else:
+                m.execute_script(install_script % (app["app_manifest"], "install"), script_timeout=30000)
+            # go to system app
+            m.switch_to_frame()
+            # click Install
+            for el in m.find_elements("tag name", "button"):
+                if "Install" == el.text:
+                    el.tap()
+            # get back into marketplace
+            gaia_apps.switch_to_displayed_app()
+            # Did the app get installed?
+            result = m.execute_script("return window.wrappedJSObject.marionette_install_result") 
+            if result != True: 
+                entry = "%s_%s" % (app_name, attempt)
+                failed[entry] = "failed to install: %s" % result
+                continue
+            installed = True
+        # launch app, wait 3 minutes
+        #app_under_test = gaia_apps.launch(app_name, switch_to_frame=True, launch_timeout=180000)
+        app_under_test = launch_with_manifest(m, app_name, app["app_manifest"], attempt)
+        # Wait at most 3 minutes for app to load
+        try:
+            Wait(m, timeout=180).until(lambda m: m.execute_script("return window.document.readyState;") == "complete")
+        except TimeoutException:
+            entry = "%s_%s" % (app_name, attempt)
+            failed[entry] = "launch timeout"
+            continue
+        shot = m.screenshot()
+        img = base64.b64decode(shot.encode('ascii'))
+        if not os.path.exists("screenshots"):
+            os.makedirs("screenshots")
+        with open("screenshots/%s_%d_%s.png" % (app_name, attempt, int(time.time())), "w") as f:
+            f.write(img)
+        gaia_apps.kill_all()
+        if attempt == 2:
+            uninstall_with_manifest(m, app_name, app["app_manifest"], attempt)
+        logcat = dm.getLogcat()
+        with open("logcats/%s_%d_%s.log" % (app_name, attempt, int(time.time())), "w") as f:
+            for line in logcat:
+                f.write(line)
 if failed:
     with open("failures.json", "w") as f:
         f.write(json.dumps(failed))
