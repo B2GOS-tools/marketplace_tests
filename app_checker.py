@@ -79,11 +79,19 @@ for app in apps:
     # clear logcat
     app_name = app["app_name"]
     installed = False
-    for attempt in [1,2]:
+    for attempt in [1, 2]:
         dm._checkCmd(["logcat", "-c"])
         # launch (or switch to) marketplace, wait 3 minutes for successful launch
-        marketplace_app = gaia_apps.launch("Marketplace", switch_to_frame=True, launch_timeout=180000)
         if not installed:
+            print 'not installed'
+            marketplace_app = gaia_apps.launch("Browser", switch_to_frame=True, launch_timeout=180000)
+            m.navigate("https://marketplace.firefox.com")
+            try:
+                Wait(m, timeout=120).until(lambda m: m.execute_script("return window.document.readyState;") == "complete")
+            except TimeoutException:
+                entry = "%s_%s" % (app_name, attempt)
+                failed[entry] = "timed out waiting for marketplace"
+                continue
             # trigger the install
             if app["is_packaged"]:
                 m.execute_script(install_script % (app["app_manifest"], "installPackage"), script_timeout=30000)
@@ -103,23 +111,37 @@ for app in apps:
                 entry = "%s_%s" % (app_name, attempt)
                 failed[entry] = "failed to install: %s" % result
                 continue
+            # switch to system frame to check if the app *fully* installed
+            m.switch_to_frame()
+            try:
+                Wait(m, timeout=120).until(lambda m:
+                                           m.execute_script('return window.wrappedJSObject.Applications.getByManifestURL("%s");' % app["app_manifest"]) != None)
+                Wait(m, timeout=120).until(lambda m:
+                                           m.execute_script('return window.wrappedJSObject.Applications.getByManifestURL("%s").manifest != undefined;' % app["app_manifest"]))
+            except TimeoutException:
+                entry = "%s_%s" % (app_name, attempt)
+                failed[entry] = "failed to install: %s" % result
+                continue
             installed = True
         # launch app, wait 3 minutes
-        #app_under_test = gaia_apps.launch(app_name, switch_to_frame=True, launch_timeout=180000)
+        print 'launching'
         app_under_test = launch_with_manifest(m, app_name, app["app_manifest"], attempt)
-        # Wait at most 3 minutes for app to load
+        # Wait a few minutes for app to load
         try:
-            Wait(m, timeout=180).until(lambda m: m.execute_script("return window.document.readyState;") == "complete")
+            Wait(m, timeout=120).until(lambda m: m.execute_script("return window.document.readyState;") == "complete")
         except TimeoutException:
             entry = "%s_%s" % (app_name, attempt)
             failed[entry] = "launch timeout"
             continue
+        print 'launched'
         shot = m.screenshot()
         img = base64.b64decode(shot.encode('ascii'))
         if not os.path.exists("screenshots"):
             os.makedirs("screenshots")
         with open("screenshots/%s_%d_%s.png" % (app_name, attempt, int(time.time())), "w") as f:
             f.write(img)
+        # go back to system app
+        m.switch_to_frame()
         gaia_apps.kill_all()
         if attempt == 2:
             uninstall_with_manifest(m, app_name, app["app_manifest"], attempt)
