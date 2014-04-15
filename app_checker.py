@@ -33,7 +33,7 @@ dm = DeviceManagerADB()
 if not os.path.exists("logcats"):
     os.makedirs("logcats")
 logcat = dm.getLogcat()
-with open("logcats/before_test.logcat", "w") as f:
+with open("logcats/before_test_%s.log" % int(time.time()), "w") as f:
     for line in logcat:
         f.write(line)
 for app_name, path in apps.iteritems():
@@ -66,11 +66,11 @@ for app_name, path in apps.iteritems():
     img = base64.b64decode(shot.encode('ascii'))
     if not os.path.exists("screenshots"):
         os.makedirs("screenshots")
-    with open("screenshots/%s.png" % app_name, "w") as f:
+    with open("screenshots/%s_%s.png" % (app_name, int(time.time())), "w") as f:
         f.write(img)
     gaia_apps.kill_all()
     gaia_apps.uninstall(app_name)
     logcat = dm.getLogcat()
-    with open("logcats/%s.logcat" % app_name, "w") as f:
+    with open("logcats/%s_%s.log" % (app_name, int(time.time())), "w") as f:
         for line in logcat:
             f.write(line)
