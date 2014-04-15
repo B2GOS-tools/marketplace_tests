@@ -7,7 +7,6 @@ from gaiatest import GaiaApps
 from marionette import Marionette
 from marionette.wait import Wait
 from mozdevice import DeviceManagerADB
-from mozhttpd import MozHttpd
 import moznetwork
 
 apps = None
