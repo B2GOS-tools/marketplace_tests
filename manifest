@@ -1,3 +1,7 @@
-{"MyTestApp": "http://nakubu.com/site_media/webapi-test-app/manifest.webapp",
- "MyApp1": "http://nakubu.com/site_media/apps/myapp1/manifest.webapp"
-}
+[
+	{
+		"app_name": "loqui",
+		"is_packaged": true,
+		"app_manifest": "https://marketplace.firefox.com/app/7b41976f-cb97-4b90-a711-a71376d21d42/manifest.webapp"
+	}
+]
