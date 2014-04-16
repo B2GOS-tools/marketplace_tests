@@ -124,9 +124,8 @@ try:
                 marketplace_app = test_run.gaia_apps.launch("Browser", switch_to_frame=True, launch_timeout=60000)
                 test_run.get_marionette().navigate("https://marketplace.firefox.com")
                 try:
-                    Wait(test_run.get_marionette(), timeout=120).until(lambda m: m.execute_script("return window.document.readyState;") == "complete")
+                    Wait(test_run.get_marionette(), timeout=180).until(lambda m: m.execute_script("return window.document.readyState;") == "complete")
                 except (TimeoutException, ScriptTimeoutException) as e:
-                    print e
                     entry = "%s_%s" % (app_name, attempt)
                     test_run.test_results[entry] = "timed out waiting for marketplace"
                     continue
@@ -146,6 +145,7 @@ try:
                 # Did the app get installed?
                 result = test_run.get_marionette().execute_script("return window.wrappedJSObject.marionette_install_result") 
                 if result != True: 
+                    print e
                     entry = "%s_%s" % (app_name, attempt)
                     test_run.test_results[entry] = "failed to install: %s" % result
                     continue
@@ -159,7 +159,7 @@ try:
                 except (TimeoutException, ScriptTimeoutException) as e:
                     print e
                     entry = "%s_%s" % (app_name, attempt)
-                    test_run.test_results[entry] = "failed to install: %s" % result
+                    test_run.test_results[entry] = "failed to install: %s" % e
                     continue
                 installed = True
             try:
