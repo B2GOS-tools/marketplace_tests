@@ -5,7 +5,7 @@ import time
 
 from gaiatest import GaiaApps, GaiaApp, GaiaDevice
 from marionette import Marionette
-from marionette.errors import TimeoutException, MarionetteException
+from marionette.errors import ScriptTimeoutException, TimeoutException, MarionetteException
 from marionette.wait import Wait
 from mozdevice import DeviceManagerADB
 import moznetwork
@@ -15,11 +15,13 @@ class TestRun(object):
     def __init__(self):
         self.test_results = {}
         self.m = None
+        self.gaia_apps = None
 
     def get_marionette(self):
         if not self.m:
             self.m = Marionette()
             self.m.start_session()
+            self.gaia_apps = GaiaApps(self.m)
         else:
             tries = 5
             while tries > 0:
@@ -27,11 +29,15 @@ class TestRun(object):
                     self.m.get_url()
                     break
                 except MarionetteException as e:
-                    if "Please start a session" in e:
+                    if "Please start a session" in str(e):
                         time.sleep(5)
                         self.m = Marionette()
                         self.m.start_session()
+                        self.gaia_apps = GaiaApps(self.m)
                         tries -= 1
+                    else:
+                        import pdb;pdb.set_trace()
+                        raise e
             else:
                 raise Exception("Marionette is not available, phone seems unresponsive")
         return self.m
@@ -76,8 +82,8 @@ try:
     apps = None
     with open('manifest.json', 'r') as f:
         apps = json.loads(f.read())
-    gaia_apps = GaiaApps(test_run.get_marionette())
-    gaia_apps.kill_all()
+    test_run.get_marionette()
+    test_run.gaia_apps.kill_all()
     
     install_script = """
     var installUrl = '%s';
@@ -113,11 +119,14 @@ try:
             # launch (or switch to) marketplace, wait 3 minutes for successful launch
             if not installed:
                 print 'not installed'
-                marketplace_app = gaia_apps.launch("Browser", switch_to_frame=True, launch_timeout=60000)
+                # go to system app
+                test_run.get_marionette().switch_to_frame()
+                marketplace_app = test_run.gaia_apps.launch("Browser", switch_to_frame=True, launch_timeout=60000)
                 test_run.get_marionette().navigate("https://marketplace.firefox.com")
                 try:
                     Wait(test_run.get_marionette(), timeout=120).until(lambda m: m.execute_script("return window.document.readyState;") == "complete")
-                except TimeoutException:
+                except (TimeoutException, ScriptTimeoutException) as e:
+                    print e
                     entry = "%s_%s" % (app_name, attempt)
                     test_run.test_results[entry] = "timed out waiting for marketplace"
                     continue
@@ -133,7 +142,7 @@ try:
                     if "Install" == el.text:
                         el.tap()
                 # get back into marketplace
-                gaia_apps.switch_to_displayed_app()
+                test_run.gaia_apps.switch_to_displayed_app()
                 # Did the app get installed?
                 result = test_run.get_marionette().execute_script("return window.wrappedJSObject.marionette_install_result") 
                 if result != True: 
@@ -146,23 +155,31 @@ try:
                     Wait(test_run.get_marionette(), timeout=120).until(lambda m:
                                                m.execute_script('return window.wrappedJSObject.Applications.getByManifestURL("%s");' % app["app_manifest"]) != None)
                     Wait(test_run.get_marionette(), timeout=120).until(lambda m:
-                                               m.execute_script('return window.wrappedJSObject.Applications.getByManifestURL("%s").manifest != undefined;' % app["app_manifest"]))
-                except TimeoutException:
+                                              m.execute_script('return window.wrappedJSObject.Applications.getByManifestURL("%s").manifest != undefined;' % app["app_manifest"]))
+                except (TimeoutException, ScriptTimeoutException) as e:
+                    print e
                     entry = "%s_%s" % (app_name, attempt)
                     test_run.test_results[entry] = "failed to install: %s" % result
                     continue
                 installed = True
-            test_run.get_marionette().switch_to_frame()
-            Wait(test_run.get_marionette(), timeout=120).until(lambda m:
+            try:
+                Wait(test_run.get_marionette(), timeout=120).until(lambda m:
                                        m.execute_script('return window.wrappedJSObject.Applications.getByManifestURL("%s").manifest != undefined;' % app["app_manifest"]))
+            except (TimeoutException, ScriptTimeoutException) as e:
+                print e
+                entry = "%s_%s" % (app_name, attempt)
+                test_run.test_results[entry] = "failed to install correctly: %s" % result
+                continue
             print 'launching'
             # Wait a few minutes for app to load
             try:
                 app_under_test = test_run.launch_with_manifest(app_name, app["app_manifest"], attempt)
                 Wait(test_run.get_marionette(), timeout=180).until(lambda m: m.execute_script("return window.document.readyState;") == "complete")
-            except TimeoutException:
+            except Exception as e:
+                print e
                 entry = "%s_%s" % (app_name, attempt)
                 test_run.test_results[entry] = "launch timeout"
+                test_run.get_marionette().switch_to_frame()
                 continue
             print 'launched'
             shot = test_run.get_marionette().screenshot()
@@ -173,7 +190,7 @@ try:
                 f.write(img)
             # go back to system app
             test_run.get_marionette().switch_to_frame()
-            gaia_apps.kill_all()
+            test_run.gaia_apps.kill_all()
             if attempt == 2:
                 test_run.uninstall_with_manifest(app_name, app["app_manifest"], attempt)
             logcat = dm.getLogcat()
