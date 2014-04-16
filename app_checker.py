@@ -266,6 +266,7 @@ for app in apps:
             test_run.screenshot_path = "screenshots/%s_%d_%s.png" % (app_name, attempt, int(time.time()))
             with open(test_run.screenshot_path, "w") as f:
                 f.write(img)
+            test_run.device.touch_home_button()
             # go back to system app
             test_run.get_marionette().switch_to_frame()
             test_run.gaia_apps.kill_all()
