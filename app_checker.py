@@ -118,7 +118,7 @@ try:
             dm._checkCmd(["logcat", "-c"])
             # launch (or switch to) marketplace, wait 3 minutes for successful launch
             if not installed:
-                print 'not installed'
+                print 'installing %s' % app_name
                 # go to system app
                 test_run.get_marionette().switch_to_frame()
                 marketplace_app = test_run.gaia_apps.launch("Browser", switch_to_frame=True, launch_timeout=60000)
