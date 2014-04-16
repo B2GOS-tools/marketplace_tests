@@ -7,6 +7,7 @@ from gaiatest import GaiaApps, GaiaApp, GaiaDevice
 from marionette import Marionette
 from marionette.errors import ScriptTimeoutException, TimeoutException, MarionetteException
 from marionette.wait import Wait
+import socket
 from mozdevice import DeviceManagerADB
 import moznetwork
 
@@ -16,6 +17,7 @@ class TestRun(object):
         self.test_results = {}
         self.m = None
         self.gaia_apps = None
+        self.dm = DeviceManagerADB()
 
     def get_marionette(self):
         if not self.m:
@@ -36,7 +38,6 @@ class TestRun(object):
                         self.gaia_apps = GaiaApps(self.m)
                         tries -= 1
                     else:
-                        import pdb;pdb.set_trace()
                         raise e
             else:
                 raise Exception("Marionette is not available, phone seems unresponsive")
@@ -74,48 +75,68 @@ class TestRun(object):
             entry = "%s_%s" % (app_name, attempt)
             self.test_results[entry] = "Failed to uninstall app with url '%s'" % manifest
         return app
-    
-    
-try:
-    test_run = TestRun()
-    # Load manifest
-    apps = None
-    with open('manifest.json', 'r') as f:
-        apps = json.loads(f.read())
-    test_run.get_marionette()
-    test_run.gaia_apps.kill_all()
-    
-    install_script = """
-    var installUrl = '%s';
-    var request = window.navigator.mozApps.%s(installUrl);
-    request.onsuccess = function () {
-      window.wrappedJSObject.marionette_install_result = true;
-    };
-    request.onerror = function () {
-     window.wrappedJSObject.marionette_install_result = this.error.name;
-    };
-    """
-    # TODO: assumes adb is on path
-    dm = DeviceManagerADB()
-    if not os.path.exists("logcats"):
-        os.makedirs("logcats")
-    logcat = dm.getLogcat()
-    
-    
-    device = GaiaDevice(test_run.get_marionette())
-    device.add_device_manager(dm)
-    device.unlock()
-    # Get first logact before tests start
-    with open("logcats/before_test_%s.log" % int(time.time()), "w") as f:
-        for line in logcat:
-            f.write(line)
-    
-    for app in apps:
-        # clear logcat
-        app_name = app["app_name"]
-        installed = False
-        for attempt in [1, 2]:
-            dm._checkCmd(["logcat", "-c"])
+
+    def restart_device(self):
+        print "rebooting"
+        # TODO restarting b2g doesn't seem to work... reboot then
+        self.dm.reboot(wait=True)
+        print "forwarding"
+        self.dm.forward("tcp:2828", "tcp:2828") 
+        self.m = Marionette()
+        if not self.m.wait_for_port(180):
+            raise Exception("Couldn't restart device in time")
+        self.m.start_session()
+        self.gaia_apps = GaiaApps(self.m)
+
+    def readystate_wait(self, app):
+            try:
+                Wait(self.get_marionette(), timeout=180).until(lambda m: m.execute_script("return window.document.readyState;") == "complete")
+            except ScriptTimeoutException as e:
+                entry = "%s_%s" % (app_name, attempt)
+                self.test_results[entry] = "FAILED: timed out waiting for %s" % app
+                return False
+            return True  
+
+test_run = TestRun()
+# Load manifest
+apps = None
+with open('manifest.json', 'r') as f:
+    apps = json.loads(f.read())
+test_run.get_marionette()
+test_run.gaia_apps.kill_all()
+
+install_script = """
+var installUrl = '%s';
+var request = window.navigator.mozApps.%s(installUrl);
+request.onsuccess = function () {
+  window.wrappedJSObject.marionette_install_result = true;
+};
+request.onerror = function () {
+ window.wrappedJSObject.marionette_install_result = this.error.name;
+};
+"""
+# TODO: assumes adb is on path
+if not os.path.exists("logcats"):
+    os.makedirs("logcats")
+logcat = test_run.dm.getLogcat()
+
+
+device = GaiaDevice(test_run.get_marionette())
+device.add_device_manager(test_run.dm)
+device.unlock()
+# Get first logact before tests start
+with open("logcats/before_test_%s.log" % int(time.time()), "w") as f:
+    for line in logcat:
+        f.write(line)
+
+for app in apps:
+    # clear logcat
+    app_name = app["app_name"]
+    installed = False
+    for attempt in [1, 2]:
+        exception_occurred = False
+        try:
+            test_run.dm._checkCmd(["logcat", "-c"])
             # launch (or switch to) marketplace, wait 3 minutes for successful launch
             if not installed:
                 print 'installing %s' % app_name
@@ -123,11 +144,7 @@ try:
                 test_run.get_marionette().switch_to_frame()
                 marketplace_app = test_run.gaia_apps.launch("Browser", switch_to_frame=True, launch_timeout=60000)
                 test_run.get_marionette().navigate("https://marketplace.firefox.com")
-                try:
-                    Wait(test_run.get_marionette(), timeout=180).until(lambda m: m.execute_script("return window.document.readyState;") == "complete")
-                except (TimeoutException, ScriptTimeoutException) as e:
-                    entry = "%s_%s" % (app_name, attempt)
-                    test_run.test_results[entry] = "timed out waiting for marketplace"
+                if not test_run.readystate_wait("marketplace"):
                     continue
                 # trigger the install
                 if app["is_packaged"]:
@@ -147,7 +164,7 @@ try:
                 if result != True: 
                     print e
                     entry = "%s_%s" % (app_name, attempt)
-                    test_run.test_results[entry] = "failed to install: %s" % result
+                    test_run.test_results[entry] = "FAILED: failed to install: %s" % result
                     continue
                 # switch to system frame to check if the app *fully* installed
                 test_run.get_marionette().switch_to_frame()
@@ -159,7 +176,7 @@ try:
                 except (TimeoutException, ScriptTimeoutException) as e:
                     print e
                     entry = "%s_%s" % (app_name, attempt)
-                    test_run.test_results[entry] = "failed to install: %s" % e
+                    test_run.test_results[entry] = "FAILED: failed to install: %s" % e
                     continue
                 installed = True
             try:
@@ -168,18 +185,19 @@ try:
             except (TimeoutException, ScriptTimeoutException) as e:
                 print e
                 entry = "%s_%s" % (app_name, attempt)
-                test_run.test_results[entry] = "failed to install correctly: %s" % result
+                test_run.test_results[entry] = "FAILED: failed to install correctly: %s" % result
                 continue
             print 'launching'
             # Wait a few minutes for app to load
             try:
                 app_under_test = test_run.launch_with_manifest(app_name, app["app_manifest"], attempt)
-                Wait(test_run.get_marionette(), timeout=180).until(lambda m: m.execute_script("return window.document.readyState;") == "complete")
             except Exception as e:
                 print e
                 entry = "%s_%s" % (app_name, attempt)
-                test_run.test_results[entry] = "launch timeout"
+                test_run.test_results[entry] = "FAILED: launch timeout"
                 test_run.get_marionette().switch_to_frame()
+                continue
+            if not test_run.readystate_wait(app_name):
                 continue
             print 'launched'
             shot = test_run.get_marionette().screenshot()
@@ -189,17 +207,31 @@ try:
             with open("screenshots/%s_%d_%s.png" % (app_name, attempt, int(time.time())), "w") as f:
                 f.write(img)
             # go back to system app
-            test_run.get_marionette().switch_to_frame()
-            test_run.gaia_apps.kill_all()
-            if attempt == 2:
+                test_run.get_marionette().switch_to_frame()
+                test_run.gaia_apps.kill_all()
+                entry = "%s_%s" % (app_name, attempt)
+                test_run.test_results[entry] = "PASS"
+        except (TimeoutException, socket.error):
+            exception_occurred = True
+            entry = "%s_%s" % (app_name, attempt)
+            test_run.test_results[entry] = "FAILED: Connection timeout, restarting phone"
+            test_run.restart_device()
+            continue
+        except (KeyboardInterrupt, Exception) as e:
+            exception_occurred = True
+            with open("test_results.json", "w") as f:
+                # explain why we failed
+                test_run.test_results["Suite failure"] = str(e)
+                f.write(json.dumps(test_run.test_results))
+            raise e
+        except:
+            exception_occurred = True
+        finally:
+            if (attempt == 2) or exception_occurred:
                 test_run.uninstall_with_manifest(app_name, app["app_manifest"], attempt)
-            logcat = dm.getLogcat()
+            logcat = test_run.dm.getLogcat()
             with open("logcats/%s_%d_%s.log" % (app_name, attempt, int(time.time())), "w") as f:
                 for line in logcat:
                     f.write(line)
-            entry = "%s_%s" % (app_name, attempt)
-            test_run.test_results[entry] = "pass"
-except (KeyboardInterrupt, Exception) as e:
-    with open("test_results.json", "w") as f:
-        f.write(json.dumps(test_run.test_results))
-    raise e
+with open("test_results.json", "w") as f:
+    f.write(json.dumps(test_run.test_results))
