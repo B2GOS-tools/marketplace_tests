@@ -105,7 +105,14 @@ class TestRun(object):
         # TODO restarting b2g doesn't seem to work... reboot then
         self.dm.reboot(wait=True)
         print "forwarding"
-        self.dm.forward("tcp:2828", "tcp:2828") 
+        tries = 20
+        while tries > 0:
+            if self.dm.forward("tcp:2828", "tcp:2828") == 0:
+                break
+            tries -= 1
+            time.sleep(3)
+        else:
+            raise Exception("Couldn't restart device in time")
         self.m = Marionette()
         if not self.m.wait_for_port(180):
             raise Exception("Couldn't restart device in time")
