@@ -276,6 +276,11 @@ for app in apps:
             test_run.add_result(status="Script timeout: %s running next test" % e)
             print "Script timeout: %s running next test" % e
             continue
+        except MarionetteException as e:
+            exception_occurred = True
+            test_run.add_result(status="Script error: %s running next test" % e)
+            print "Marionette script error: %s running next test" % e
+            continue
         except (KeyboardInterrupt, Exception) as e:
             exception_occurred = True
             entry = "%s_%s" % (app_name, attempt)
