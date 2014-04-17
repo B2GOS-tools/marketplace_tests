@@ -26,6 +26,14 @@ class TestRun(object):
         self.num_apps = None
         self.device = None
 
+    def reset_marionette(self):
+        try:
+            self.m.delete_session()
+        except Exception:
+            pass
+        self.m = None
+        self.get_marionette()
+
     def get_marionette(self):
         if not self.m:
             self.m = Marionette()
@@ -293,6 +301,8 @@ for app in apps:
             exception_occurred = True
             test_run.add_result(status="Script error: %s running next test" % e)
             print "Marionette script error: %s running next test" % e
+            print 'resetting'
+            test_run.reset_marionette()
             continue
         except (KeyboardInterrupt, Exception) as e:
             exception_occurred = True
