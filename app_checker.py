@@ -81,7 +81,7 @@ class TestRun(object):
 
     def launch_with_manifest(self, manifest):
         self.m.switch_to_frame() 
-        result = self.m.execute_async_script("GaiaApps.launchWithManifestURL('%s')" % manifest, script_timeout=180000)
+        result = self.m.execute_async_script("GaiaApps.launchWithManifestURL('%s')" % manifest, script_timeout=30000)
         if result == False:
             raise Exception("launch timed out")
         app = GaiaApp(frame=result.get('frame'),
@@ -136,7 +136,7 @@ class TestRun(object):
 
     def readystate_wait(self, app):
         try:
-            Wait(self.get_marionette(), timeout=180).until(lambda m: m.execute_script("return window.document.readyState;") == "complete")
+            Wait(self.get_marionette(), timeout=30).until(lambda m: m.execute_script("return window.document.readyState;") == "complete")
         except ScriptTimeoutException as e:
             return False
         return True  
