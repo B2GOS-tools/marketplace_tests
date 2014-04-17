@@ -51,7 +51,8 @@ class TestRun(object):
                     else:
                         raise e
             else:
-                raise Exception("Marionette is not available, phone seems unresponsive")
+                print "Can't connect to marionette, rebooting" 
+                self.restart_device()
         return self.m
 
     def add_result(self, passed=False, status=None, uninstalled_failure=False):
@@ -117,6 +118,9 @@ class TestRun(object):
         if not self.m.wait_for_port(180):
             raise Exception("Couldn't restart device in time")
         self.m.start_session()
+        Wait(self.m, timeout=180).until(lambda m: m.find_element("id", "lockscreen-container").is_displayed())
+        # It retuns a little early
+        time.sleep(2)
         self.device = GaiaDevice(self.m)
         self.device.add_device_manager(test_run.dm)
         self.device.unlock()
@@ -202,6 +206,7 @@ for app in apps:
         exception_occurred = False
         test_run.screenshot_path = None
         test_run.logcat_path = "logcats/%s_%d_%s.log" % (app_name, attempt, int(time.time()))
+        print "testing: %s %s" % (app_name, attempt)
         try:
             test_run.record_icons()
             test_run.dm._checkCmd(["logcat", "-c"])
