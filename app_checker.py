@@ -302,7 +302,11 @@ for app in apps:
             test_run.add_result(status="Script error: %s running next test" % e)
             print "Marionette script error: %s running next test" % e
             print 'resetting'
-            test_run.reset_marionette()
+            try:
+                test_run.reset_marionette()
+            except:
+                # if we can't get a session here, we reset
+                test_run.restart_device()
             continue
         except (KeyboardInterrupt, Exception) as e:
             exception_occurred = True
