@@ -209,6 +209,9 @@ for app in apps:
     app_name = app["app_name"]
     test_run.app_name = app_name
     installed = False
+    # Checkpoint
+    with open("test_results.json", "w") as f:
+        f.write(json.dumps(test_run.test_results))
     for attempt in [1, 2]:
         test_run.attempt = attempt
         exception_occurred = False
