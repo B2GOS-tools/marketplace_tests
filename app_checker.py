@@ -287,7 +287,7 @@ for app in apps:
             test_run.get_marionette().switch_to_frame()
             test_run.gaia_apps.kill_all()
             test_run.add_result(passed=True)
-        except (TimeoutException, JavascriptException, socket.error) as e:
+        except (TimeoutException, JavascriptException, socket.error, IOError) as e:
             #NOTE: JavascriptExceptions are added because if we get in a weird
             # state in gaia, we get errors when we execute JS, so we reboot
             exception_occurred = True
