@@ -204,6 +204,7 @@ with open("logcats/before_test_%s.log" % int(time.time()), "w") as f:
     for line in logcat:
         f.write(line)
 
+start_time = time.time()
 for app in apps:
     # clear logcat
     app_name = app["app_name"]
@@ -316,6 +317,7 @@ for app in apps:
             with open("test_results.json", "w") as f:
                 # explain why we failed
                 test_run.test_results["Suite failure"] = str(e)
+                test_run.test_results["Total Time"] = time.time() - start_time
                 f.write(json.dumps(test_run.test_results))
             raise e
         finally:
@@ -334,4 +336,5 @@ for app in apps:
                 for line in logcat:
                     f.write(line)
 with open("test_results.json", "w") as f:
+    test_run.test_results["Total Time"] = time.time() - start_time
     f.write(json.dumps(test_run.test_results))
