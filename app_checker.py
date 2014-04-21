@@ -109,30 +109,42 @@ class TestRun(object):
             self.add_result(status="Failed to uninstall app with url '%s'" % manifest)
         return app
 
-    def restart_device(self):
+    def restart_device(self, restart_tries=0):
         print "rebooting"
         # TODO restarting b2g doesn't seem to work... reboot then
-        self.dm.reboot(wait=True)
-        print "forwarding"
-        tries = 20
-        while tries > 0:
-            if self.dm.forward("tcp:2828", "tcp:2828") == 0:
-                break
-            tries -= 1
-            time.sleep(3)
+        while restart_tries < 3:
+            restart_tries += 1
+            self.dm.reboot(wait=True)
+            print "forwarding"
+            dm_tries = 0
+            while dm_tries < 20:
+                if self.dm.forward("tcp:2828", "tcp:2828") == 0:
+                    break
+                dm_tries += 1
+                time.sleep(3)
+            else:
+                print "couldn't forward port in time, rebooting"
+                continue
+            self.m = Marionette()
+            if not self.m.wait_for_port(180):
+                print "couldn't contact marionette in time, rebooting"
+                continue
+            self.m.start_session()
+            try:
+                Wait(self.m, timeout=240).until(lambda m: m.find_element("id", "lockscreen-container").is_displayed())
+                # It retuns a little early
+                time.sleep(2)
+                self.device = GaiaDevice(self.m)
+                self.device.add_device_manager(test_run.dm)
+                self.device.unlock()
+                self.gaia_apps = GaiaApps(self.m)
+            except (MarionetteException, IOError, socket.error) as e:
+                print "got exception: %s, going to retry" % e
+                self.m.delete_session()
+                continue
+            break
         else:
-            raise Exception("Couldn't restart device in time")
-        self.m = Marionette()
-        if not self.m.wait_for_port(180):
-            raise Exception("Couldn't restart device in time")
-        self.m.start_session()
-        Wait(self.m, timeout=180).until(lambda m: m.find_element("id", "lockscreen-container").is_displayed())
-        # It retuns a little early
-        time.sleep(2)
-        self.device = GaiaDevice(self.m)
-        self.device.add_device_manager(test_run.dm)
-        self.device.unlock()
-        self.gaia_apps = GaiaApps(self.m)
+            raise Exception("Couldn't restart the device in time, even after 3 tries")
 
     def readystate_wait(self, app):
         try:
@@ -316,7 +328,7 @@ for app in apps:
                 test_run.add_result(status="Unknown failure: %s" % e)
             with open("test_results.json", "w") as f:
                 # explain why we failed
-                test_run.test_results["Suite failure"] = str(e)
+                test_run.test_results["Suite failure when running %s" % app_name] = str(e)
                 test_run.test_results["Total Time"] = time.time() - start_time
                 f.write(json.dumps(test_run.test_results))
             raise e
