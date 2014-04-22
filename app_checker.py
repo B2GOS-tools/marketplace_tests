@@ -129,6 +129,7 @@ class TestRun(object):
             if not self.m.wait_for_port(180):
                 print "couldn't contact marionette in time, rebooting"
                 continue
+            time.sleep(1)
             self.m.start_session()
             try:
                 Wait(self.m, timeout=240).until(lambda m: m.find_element("id", "lockscreen-container").is_displayed())
@@ -140,7 +141,11 @@ class TestRun(object):
                 self.gaia_apps = GaiaApps(self.m)
             except (MarionetteException, IOError, socket.error) as e:
                 print "got exception: %s, going to retry" % e
-                self.m.delete_session()
+                try:
+                    self.m.delete_session()
+                except:
+                    # at least attempt to clear the session if possible
+                    pass
                 continue
             break
         else:
