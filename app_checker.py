@@ -1,7 +1,9 @@
 import base64
 import json
+import logging
 from optparse import OptionParser
 import os
+import shutil
 import socket
 import sys
 import time
@@ -18,6 +20,7 @@ import moznetwork
 class TestRun(object):
     def __init__(self, adb="adb", serial=None):
         self.test_results = {}
+        self.test_results_file = None
         self.m = None
         self.gaia_apps = None
         self.screenshot_path = None
@@ -27,6 +30,8 @@ class TestRun(object):
         self.num_apps = None
         self.device = None
         self.serial = serial
+        self.port = None
+        self.run_log = logging.getLogger('marketplace-test')
         if self.serial:
             self.dm = DeviceManagerADB(adbPath=adb, deviceSerial=serial)
         else:
@@ -42,7 +47,7 @@ class TestRun(object):
 
     def get_marionette(self):
         if not self.m:
-            self.m = Marionette()
+            self.m = Marionette(port=self.port)
             self.m.start_session()
             self.device = GaiaDevice(self.m)
             self.device.add_device_manager(self.dm)
@@ -56,7 +61,7 @@ class TestRun(object):
                 except MarionetteException as e:
                     if "Please start a session" in str(e):
                         time.sleep(5)
-                        self.m = Marionette()
+                        self.m = Marionette(port=self.port)
                         self.m.start_session()
                         self.device = GaiaDevice(self.m)
                         self.device.add_device_manager(self.dm)
@@ -65,9 +70,20 @@ class TestRun(object):
                     else:
                         raise e
             else:
-                print "Can't connect to marionette, rebooting" 
+                self.run_log.error("Can't connect to marionette, rebooting")
                 self.restart_device()
         return self.m
+
+    def write_to_file(self, data):
+        with open("%s.tmp" % self.test_results_file, "w") as f:
+            f.write(data)
+        shutil.copyfile("%s.tmp" % self.test_results_file, self.test_results_file)
+
+    def add_values(self, key, value):
+        if self.serial:
+            self.test_results["%s_%s" % (key, self.serial)] = value
+        else:
+            self.test_results["%s" % key] = value
 
     def add_result(self, passed=False, status=None, uninstalled_failure=False):
         values = {}
@@ -115,25 +131,38 @@ class TestRun(object):
             self.add_result(status="Failed to uninstall app with url '%s'" % manifest)
         return app
 
+    def forward_port(self):
+        # get unused port
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.bind(('localhost', 0))
+        addr, port = s.getsockname()
+        s.close()
+
+        dm_tries = 0
+        self.run_log.info("using port %s" % port)
+        while dm_tries < 20:
+            if self.dm.forward("tcp:%d" % port, "tcp:2828") == 0:
+                break
+            dm_tries += 1
+            time.sleep(3)
+        else:
+            return False
+        self.port = port
+        return True
+
     def restart_device(self, restart_tries=0):
-        print "rebooting"
+        self.run_log.info("rebooting")
         # TODO restarting b2g doesn't seem to work... reboot then
         while restart_tries < 3:
             restart_tries += 1
             self.dm.reboot(wait=True)
-            print "forwarding"
-            dm_tries = 0
-            while dm_tries < 20:
-                if self.dm.forward("tcp:2828", "tcp:2828") == 0:
-                    break
-                dm_tries += 1
-                time.sleep(3)
-            else:
-                print "couldn't forward port in time, rebooting"
+            self.run_log.info("forwarding")
+            if not self.forward_port():
+                self.run_log.error("couldn't forward port in time, rebooting")
                 continue
-            self.m = Marionette()
+            self.m = Marionette(port=self.port)
             if not self.m.wait_for_port(180):
-                print "couldn't contact marionette in time, rebooting"
+                self.run_log.error("couldn't contact marionette in time, rebooting")
                 continue
             time.sleep(1)
             self.m.start_session()
@@ -146,7 +175,7 @@ class TestRun(object):
                 self.device.unlock()
                 self.gaia_apps = GaiaApps(self.m)
             except (MarionetteException, IOError, socket.error) as e:
-                print "got exception: %s, going to retry" % e
+                self.run_log.error("got exception: %s, going to retry" % e)
                 try:
                     self.m.delete_session()
                 except:
@@ -195,7 +224,8 @@ class TestRun(object):
                 if "loading" not in found_icon.get_attribute("innerHTML"):
                     return True
             time.sleep(2)
-            return False
+        return False
+
 
 
 def cli():
@@ -216,6 +246,20 @@ def cli():
     
     
     test_run = TestRun(adb=options.adb_path, serial=options.device)
+    run_log_file = None
+
+    if options.chunk:
+        options.chunk = options.chunk.split(",")
+        run_log_file = "run_log_%s.log" % int(options.chunk[0])
+        test_run.test_results_file = "test_results_%s.json" % int(options.chunk[0])
+    else:
+        run_log_file = "run_log_all.log"
+        test_run.test_results_file = "test_results.json"
+    test_run.run_log.setLevel(logging.INFO)
+    fh = logging.FileHandler(run_log_file)
+    fh.setLevel(logging.DEBUG)
+    test_run.run_log.addHandler(fh)
+    test_run.run_log.info("results_file: %s" % test_run.test_results_file)
     # Load manifest
     apps = None
     with open(manifest_file, 'r') as f:
@@ -223,9 +267,10 @@ def cli():
 
     # use given chunk if applicable
     if options.chunk:
-        apps = apps[int(options.chunk[0]):int(options.chunk[-1])]
-        test_run.test_results["chunk"] = options.chunk
+        apps = apps[int(options.chunk[0]):int(options.chunk[1])]
+        test_run.add_values("chunk", options.chunk)
 
+    test_run.forward_port()
     test_run.get_marionette()
     test_run.gaia_apps.kill_all()
     
@@ -258,20 +303,19 @@ def cli():
         test_run.app_name = app_name
         installed = False
         # Checkpoint
-        with open("test_results.json", "w") as f:
-            f.write(json.dumps(test_run.test_results))
+        test_run.add_values("Total Time", time.time() - start_time)
+        test_run.write_to_file(json.dumps(test_run.test_results))
         for attempt in [1, 2]:
             test_run.attempt = attempt
             exception_occurred = False
             test_run.screenshot_path = None
             test_run.logcat_path = "logcats/%s_%d_%s.log" % (app_name, attempt, int(time.time()))
-            print "testing: %s %s" % (app_name, attempt)
+            test_run.run_log.info("testing: %s %s" % (app_name, attempt))
             try:
                 test_run.record_icons()
-                test_run.dm._checkCmd(["logcat", "-c"])
                 # launch (or switch to) marketplace, wait 3 minutes for successful launch
                 if not installed:
-                    print 'installing %s' % app_name
+                    test_run.run_log.info('installing %s' % app_name)
                     # go to system app
                     test_run.get_marionette().switch_to_frame()
                     marketplace_app = test_run.gaia_apps.launch("Browser", switch_to_frame=True, launch_timeout=60000)
@@ -308,10 +352,9 @@ def cli():
                             raise TimeoutException("Didn't install the app in time")
                     except (TimeoutException, ScriptTimeoutException) as e:
                         test_run.add_result(status="failed to install: %s" % e)
-                        print 'failed to install'
                         continue
                     installed = True
-                print 'launching' 
+                test_run.run_log.info('launching')
                 try:
                     # ensure we're in system frame
                     test_run.get_marionette().switch_to_frame()
@@ -322,7 +365,7 @@ def cli():
                 if not test_run.readystate_wait(app_name):
                     test_run.add_result(status="timed out waiting for %s" % app)
                     continue
-                print 'launched'
+                test_run.run_log.info('launched')
                 shot = test_run.get_marionette().screenshot()
                 img = base64.b64decode(shot.encode('ascii'))
                 if not os.path.exists("screenshots"):
@@ -340,19 +383,19 @@ def cli():
                 # state in gaia, we get errors when we execute JS, so we reboot
                 exception_occurred = True
                 test_run.add_result(status="Connection timeout, restarting phone")
-                print "connection error occurred, restarting %s" % e
+                test_run.run_log.error("connection error occurred, restarting %s" % e)
                 test_run.restart_device()
                 continue
             except ScriptTimeoutException as e:
                 exception_occurred = True
                 test_run.add_result(status="Script timeout: %s running next test" % e)
-                print "Script timeout: %s running next test" % e
+                test_run.run_log.error("Script timeout: %s running next test" % e)
                 continue
             except MarionetteException as e:
                 exception_occurred = True
                 test_run.add_result(status="Script error: %s running next test" % e)
-                print "Marionette script error: %s running next test" % e
-                print 'restarting'
+                test_run.run_log.error("Marionette script error: %s running next test" % e)
+                test_run.run_log.error('restarting')
                 # if we can't get a session here, we reset
                 test_run.restart_device()
                 continue
@@ -361,11 +404,9 @@ def cli():
                 entry = "%s_%s" % (app_name, attempt)
                 if not test_run.test_results.has_key(entry):
                     test_run.add_result(status="Unknown failure: %s" % e)
-                with open("test_results.json", "w") as f:
-                    # explain why we failed
-                    test_run.test_results["Suite failure when running %s" % app_name] = str(e)
-                    test_run.test_results["Total Time"] = time.time() - start_time
-                    f.write(json.dumps(test_run.test_results))
+                test_run.add_values("Suite failure when running %s" % app_name, str(e))
+                test_run.add_values("Total Time", time.time() - start_time)
+                test_run.write_to_file(json.dumps(test_run.test_results))
                 raise e
             finally:
                 if (attempt == 2) or exception_occurred:
@@ -377,14 +418,14 @@ def cli():
                         if not test_run.test_results.has_key(entry):
                             test_run.test_results(status="Failed to uninstall", uninstalled_failure=str(e))
                         else:
-                            test_run.test_results[entry]["Uninstalled"] = "FAILED: %s" % str(e)
+                            test_run.add_values("Uninstalled", "FAILED: %s" % str(e))
                 logcat = test_run.dm.getLogcat()
+                test_run.dm._checkCmd(["logcat", "-c"])
                 with open(test_run.logcat_path, "w") as f:
                     for line in logcat:
                         f.write(line)
-    with open("test_results.json", "w") as f:
-        test_run.test_results["Total Time"] = time.time() - start_time
-        f.write(json.dumps(test_run.test_results))
+    test_run.add_values("Total Time", time.time() - start_time)
+    test_run.write_to_file(json.dumps(test_run.test_results))
 
 if __name__ == "__main__":
     cli()
