@@ -30,7 +30,8 @@ For each app, it will install it once, and uninstall it once. After installation
 Running the tests on multiple devices
 -------------------------------------
 
-You can parallelize test running by running them against multiple phones. You just need to pass in the phone ids to the run.sh script::
+You can parallelize test running by running them against multiple phones. It will automatically divide the work amongst the devices.
+You just need to pass in the phone ids to the run.sh script::
 
     source run.sh [deviceId] [deviceId] ...
 
