@@ -7,6 +7,8 @@ A tool to sequentially install, launch, screenshot, and uninstall marketplace ap
 How to Run the Tests
 ====================
 
+First, make sure that the lockscreen is enabled on your phone, and that the display timeout is set to 'Never' (in Settings->Display)
+
 Run::
 
     source run.sh
