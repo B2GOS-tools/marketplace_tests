@@ -7,6 +7,18 @@ A tool to sequentially install, launch, screenshot, and uninstall marketplace ap
 How to Run the Tests
 ====================
 
+Setup
+-----
+
+First, make sure that the lockscreen is enabled on your phone, and that the display timeout is set to 'Never' (in Settings->Display).
+
+You also need to make sure adb is enabled. Go to Settings->Device Information->More Information->Developer and make "Remote Debugging" be "adb and devtools".
+
+Your device must be connected to the internet, either via WiFi or some data plan (since this test uses the live marketplace).
+
+Running the tests
+----------------
+
 Run::
 
     source run.sh
