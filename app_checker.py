@@ -253,7 +253,7 @@ def cli():
         run_log_file = "run_log_%s.log" % int(options.chunk[0])
         test_run.test_results_file = "test_results_%s.json" % int(options.chunk[0])
     else:
-        run_log_file = "run_log_all.log"
+        run_log_file = "run_log.log"
         test_run.test_results_file = "test_results.json"
     test_run.run_log.setLevel(logging.INFO)
     fh = logging.FileHandler(run_log_file)
