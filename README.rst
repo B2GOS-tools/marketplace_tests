@@ -30,6 +30,22 @@ For each app, it will install it once, and uninstall it once. After installation
 Running the tests on multiple devices
 -------------------------------------
 
+*Multiple Devices on Many Machines*:
+
+You can manually batch the tests against a device. First you need to activate the python virtualenv::
+
+  source setup_venv.sh
+
+and then you can start the tests. Given a range of (start_index, end_index), you can start the tests like so::
+
+  python app_checker.py --range=start_index,end_index
+
+and it will start at start_index of the manifest.json file, and end at the end_index of the manifest.json file. You can also specify a manifest by doing::
+
+  python app_checker.py --manifest=/path/to/manifest --range=start_index,end_index
+
+*Multiple Devices on One Machine*:
+
 You can parallelize test running by running them against multiple phones. It will automatically divide the work amongst the devices.
 You just need to pass in the phone ids to the run.sh script::
 
