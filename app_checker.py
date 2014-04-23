@@ -253,7 +253,7 @@ def cli():
         run_log_file = "run_log_%s.log" % int(options.chunk[0])
         test_run.test_results_file = "test_results_%s.json" % int(options.chunk[0])
     else:
-        run_log_file = "run_log_all.log"
+        run_log_file = "run_log.log"
         test_run.test_results_file = "test_results.json"
     test_run.run_log.setLevel(logging.INFO)
     fh = logging.FileHandler(run_log_file)
@@ -306,6 +306,7 @@ def cli():
         test_run.add_values("Total Time", time.time() - start_time)
         test_run.write_to_file(json.dumps(test_run.test_results))
         for attempt in [1, 2]:
+            test_run.run_log.info("attempt %s for %s" % (attempt,app_name))
             test_run.attempt = attempt
             exception_occurred = False
             test_run.screenshot_path = None
@@ -370,13 +371,18 @@ def cli():
                 img = base64.b64decode(shot.encode('ascii'))
                 if not os.path.exists("screenshots"):
                     os.makedirs("screenshots")
+                test_run.run_log.info("took screenshot")
                 test_run.screenshot_path = "screenshots/%s_%d_%s.png" % (app_name, attempt, int(time.time()))
                 with open(test_run.screenshot_path, "w") as f:
                     f.write(img)
+                test_run.run_log.info("touching home button")
                 test_run.device.touch_home_button()
                 # go back to system app
+                test_run.run_log.info("switch to system")
                 test_run.get_marionette().switch_to_frame()
+                test_run.run_log.info("kill all apps")
                 test_run.gaia_apps.kill_all()
+                test_run.run_log.info("adding result")
                 test_run.add_result(passed=True)
             except (TimeoutException, JavascriptException, socket.error, IOError) as e:
                 #NOTE: JavascriptExceptions are added because if we get in a weird
