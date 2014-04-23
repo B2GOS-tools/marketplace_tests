@@ -41,9 +41,9 @@ To do this, you need to know the ids of each device. Do::
 
 and you'll get output that looks like the following example::
 
-List of devices attached
-19761202  device
-M23A232A  device
+  List of devices attached
+  19761202  device
+  M23A232A  device
 
 The device ids are 19761202 and M23A232A. To run the tests, pass in these ids to the run.sh script::
 
