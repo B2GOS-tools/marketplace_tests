@@ -27,6 +27,27 @@ And it will generate a virtual environment with the needed packages, and will ru
 
 For each app, it will install it once, and uninstall it once. After installation it will attempt to do do a sequence of "launch app, screenshot, kill app" twice.
 
+Running the tests on multiple devices
+-------------------------------------
+
+You can parallelize test running by running them against multiple phones. You just need to pass in the phone ids to the run.sh script::
+
+    source run.sh [deviceId] [deviceId] ...
+
+To do this, you need to know the ids of each device. Do::
+
+    adb devices
+
+and you'll get output that looks like the following example::
+
+List of devices attached
+19761202  device
+M23A232A  device
+
+The device ids are 19761202 and M23A232A. To run the tests, pass in these ids to the run.sh script::
+
+    source run.sh 19761202 M23A232A
+
 Results
 =======
 
